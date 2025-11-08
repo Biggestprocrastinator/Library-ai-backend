@@ -90,8 +90,6 @@ app.get("/list-models", async (req, res) => {
     res.status(500).json({ ok: false, error: error.response?.data || error.message });
   }
 });
-
-// ---------------- Chatbot Route ----------------
 app.post("/ask-ai", async (req, res) => {
   try {
     const { query } = req.body;
@@ -99,15 +97,17 @@ app.post("/ask-ai", async (req, res) => {
 
     const token = await getAccessToken();
 
-    // ✅ Updated model ID to one confirmed in your list
+    const prompt = `You are a helpful AI assistant for a library. Answer the following question clearly and concisely without repeating the query.\n\nQuestion: ${query}\nAnswer:`;
+
     const response = await axios.post(
       `${process.env.IBM_URL}/ml/v1/text/generation?version=2024-05-31`,
       {
-        model_id: "ibm/granite-3-3-8b-instruct", // ✅ Confirmed from your /list-models
-        input: query,
+        model_id: "ibm/granite-3-3-8b-instruct",
+        input: prompt,
         parameters: {
-          max_new_tokens: 250,
+          max_new_tokens: 200,
           temperature: 0.7,
+          stop_sequences: ["Question:", "Query:"],
         },
         project_id: process.env.PROJECT_ID,
       },
@@ -119,8 +119,11 @@ app.post("/ask-ai", async (req, res) => {
       }
     );
 
+    // ✅ Clean up extra text properly
     const reply =
-      response.data.results?.[0]?.generated_text || "🤖 Sorry, I couldn’t generate a reply.";
+      response.data.results?.[0]?.generated_text
+        ?.replace(/(Query:|Output:|Question:)/gi, "")
+        ?.trim() || "I couldn’t generate a clean reply.";
 
     res.json({ ok: true, query, reply });
   } catch (error) {
@@ -128,6 +131,7 @@ app.post("/ask-ai", async (req, res) => {
     res.status(500).json({ ok: false, error: "Failed to generate AI reply" });
   }
 });
+
 
 // ---------------- Start Server ----------------
 const PORT = process.env.PORT || 5000;

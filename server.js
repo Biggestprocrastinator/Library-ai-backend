@@ -90,6 +90,8 @@ app.get("/list-models", async (req, res) => {
     res.status(500).json({ ok: false, error: error.response?.data || error.message });
   }
 });
+
+// ---------------- Student-Focused Ask AI Route ----------------
 app.post("/ask-ai", async (req, res) => {
   try {
     const { query } = req.body;
@@ -97,17 +99,34 @@ app.post("/ask-ai", async (req, res) => {
 
     const token = await getAccessToken();
 
-    const prompt = `You are a helpful AI assistant for a library. Answer the following question clearly and concisely without repeating the query.\n\nQuestion: ${query}\nAnswer:`;
+    // 🎓 Student-Friendly Prompt (Improved)
+    const prompt = `
+You are **Libra**, a friendly and knowledgeable Library Assistant AI for college students.
 
+Your goal is to help students find books, study resources, and academic guidance in a clear and encouraging way.
+
+Instructions:
+- Focus only on the current question — do not invent new ones.
+- Use bullet points (•) or numbered lists for books or resources.
+- Keep tone polite, supportive, and student-friendly.
+- End your answer after you’ve completed it.
+- Avoid saying "Student:" or "Assistant:" anywhere.
+
+Question: ${query}
+
+Answer (be concise and stop after one response):
+`;
+
+    // 🧠 Call watsonx.ai Granite Model
     const response = await axios.post(
       `${process.env.IBM_URL}/ml/v1/text/generation?version=2024-05-31`,
       {
         model_id: "ibm/granite-3-3-8b-instruct",
         input: prompt,
         parameters: {
-          max_new_tokens: 200,
+          max_new_tokens: 400,           // ✅ longer for complete thoughts
           temperature: 0.7,
-          stop_sequences: ["Question:", "Query:"],
+          stop_sequences: ["Question:", "Student:", "Assistant:", "Query:"], // ✅ prevent follow-ups
         },
         project_id: process.env.PROJECT_ID,
       },
@@ -119,13 +138,16 @@ app.post("/ask-ai", async (req, res) => {
       }
     );
 
-    // ✅ Clean up extra text properly
-    const reply =
-      response.data.results?.[0]?.generated_text
-        ?.replace(/(Query:|Output:|Question:)/gi, "")
-        ?.trim() || "I couldn’t generate a clean reply.";
+    // 🧹 Clean & format response
+    const rawReply = response.data.results?.[0]?.generated_text || "";
+    const formattedReply = rawReply
+      .replace(/(Student:|Assistant:|Question:|Query:)/gi, "")
+      .replace(/\n{3,}/g, "\n\n")
+      .replace(/\s{2,}/g, " ")
+      .replace(/\*\*/g, "") // remove markdown bold markers if you prefer plain text
+      .trim();
 
-    res.json({ ok: true, query, reply });
+    res.json({ ok: true, query, reply: formattedReply });
   } catch (error) {
     console.error("❌ watsonx.ai chat error:", error.response?.data || error.message);
     res.status(500).json({ ok: false, error: "Failed to generate AI reply" });

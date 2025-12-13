@@ -66,93 +66,302 @@ app.get("/test-db", async (req, res) => {
   }
 });
 
-// ---------------- List All Available Models ----------------
-app.get("/list-models", async (req, res) => {
+
+
+
+
+
+
+
+import fs from "fs";
+
+app.post("/import-books", async (req, res) => {
   try {
-    const token = await getAccessToken();
-    const response = await axios.get(
-      `${process.env.IBM_URL}/ml/v1/foundation_model_specs?version=2024-05-31`,
-      { headers: { Authorization: `Bearer ${token}` } }
+    const books = JSON.parse(
+      fs.readFileSync("books.json", "utf8")
     );
 
-    const allModels = response.data.resources || [];
+    const response = await cloudant.postBulkDocs({
+      db: DB,
+      bulkDocs: {
+        docs: books
+      }
+    });
+
+    const successCount = response.result.filter(r => r.ok).length;
+    const errorCount = response.result.filter(r => r.error).length;
+
     res.json({
       ok: true,
-      totalModels: allModels.length,
-      models: allModels.map((m) => ({
-        id: m.model_id,
-        name: m.name,
-        description: m.description,
-      })),
+      inserted: successCount,
+      failed: errorCount,
+      total: books.length
     });
-  } catch (error) {
-    console.error("❌ Error fetching models:", error.response?.data || error.message);
-    res.status(500).json({ ok: false, error: error.response?.data || error.message });
+  } catch (err) {
+    console.error("❌ Import failed:", err.message);
+    res.status(500).json({ ok: false, error: err.message });
   }
 });
+
+
+
+
+
+async function searchBooks(userQuery) {
+  try {
+    // 1️⃣ Normalization + stop-words removal
+    const stopWords = new Set([
+      "do","you","have","the","a","an","is","are",
+      "books","book","any","of","for","with","and",
+      "please","want","need","show","find","about",
+      "hi","hello","hey"
+    ]);
+
+    const tokens = userQuery
+      .toLowerCase()
+      .split(/\W+/)
+      .filter(w => w && w.length > 2 && !stopWords.has(w));
+
+    if (tokens.length === 0) {
+      return [];
+    }
+
+    // 2️⃣ Build Lucene query
+    const terms = [];
+    tokens.forEach(t => {
+      const clean = t.replace(/[^a-z0-9]/gi, "").trim();
+      if (clean) {
+        terms.push(`title:${clean}`, `author:${clean}`);
+      }
+    });
+
+    // Join with OR for ANY match
+    const luceneQuery = terms.join(" OR ");
+
+    // 3️⃣ Execute Cloudant full-text search
+    const response = await cloudant.postSearch({
+      db: DB,
+      ddoc: "book_search",
+      index: "books",
+      query: luceneQuery,
+      limit: 5
+    });
+
+    const docs = [];
+    for (const row of response.result.rows) {
+      if (row.id) {
+        const docRes = await cloudant.getDocument({ db: DB, docId: row.id });
+        docs.push(docRes.result);
+      }
+    }
+
+    return docs;
+  } catch (e) {
+    console.error("❌ Cloudant Search Error:", e.response?.data || e.message);
+    return [];
+  }
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 // ---------------- Student-Focused Ask AI Route ----------------
 app.post("/ask-ai", async (req, res) => {
   try {
     const { query } = req.body;
-    if (!query) return res.status(400).json({ ok: false, error: "Missing query text" });
+    if (!query || typeof query !== "string" || query.trim().length === 0) {
+      return res.status(400).json({ ok: false, error: "Missing or invalid query text" });
+    }
 
+    // ————————————————
+    // 1️⃣ GET IBM TOKEN
     const token = await getAccessToken();
+    if (!token) throw new Error("Failed to get IBM Access Token");
 
-    // 🎓 Student-Friendly Prompt (Improved)
-    const prompt = `
-You are **Libra**, a friendly and knowledgeable Library Assistant AI for college students.
 
-Your goal is to help students find books, study resources, and academic guidance in a clear and encouraging way.
+     const lowerQuery = query.toLowerCase().trim();
+    const BOOK_QUERY_KEYWORDS = [
+      "book",
+      "books",
+      "read",
+      "find",
+      "author",
+      "title",
+      "have",
+      "available",
+      "inventory",
+      "copy",
+      "copies",
+      "where",
+      "which",
+      "what",
+      "do you have",
+      "search"
+    ];
 
-Instructions:
-- Focus only on the current question — do not invent new ones.
-- Use bullet points (•) or numbered lists for books or resources.
-- Keep tone polite, supportive, and student-friendly.
-- End your answer after you’ve completed it.
-- Avoid saying "Student:" or "Assistant:" anywhere.
-
-Question: ${query}
-
-Answer (be concise and stop after one response):
-`;
-
-    // 🧠 Call watsonx.ai Granite Model
-    const response = await axios.post(
-      `${process.env.IBM_URL}/ml/v1/text/generation?version=2024-05-31`,
-      {
-        model_id: "ibm/granite-3-3-8b-instruct",
-        input: prompt,
-        parameters: {
-          max_new_tokens: 400,           // ✅ longer for complete thoughts
-          temperature: 0.7,
-          stop_sequences: ["Question:", "Student:", "Assistant:", "Query:"], // ✅ prevent follow-ups
-        },
-        project_id: process.env.PROJECT_ID,
-      },
-      {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-      }
+    const looksLikeBookQuery = BOOK_QUERY_KEYWORDS.some(keyword =>
+      lowerQuery.includes(keyword)
     );
 
-    // 🧹 Clean & format response
-    const rawReply = response.data.results?.[0]?.generated_text || "";
-    const formattedReply = rawReply
-      .replace(/(Student:|Assistant:|Question:|Query:)/gi, "")
-      .replace(/\n{3,}/g, "\n\n")
-      .replace(/\s{2,}/g, " ")
-      .replace(/\*\*/g, "") // remove markdown bold markers if you prefer plain text
-      .trim();
+    if (!looksLikeBookQuery) {
+      return res.json({
+        ok: true,
+        query,
+        resultsFound: 0,
+        reply: "Hi! If you’re looking for books or need help finding something in the library, just ask me about specific topics, titles, or authors 😊"
+      });
+    }
+    // ————————— End casual query handling —————————
 
-    res.json({ ok: true, query, reply: formattedReply });
+    // Continue with inventory search…
+
+    
+    // ————————————————
+    // 2️⃣ SEARCH INVENTORY (full-text Lucene search)
+    const books = await searchBooks(query);
+
+    // Build number of matches
+    const resultsFound = Array.isArray(books) ? books.length : 0;
+
+    // ————————————————
+    // 3️⃣ BUILD INVENTORY CONTEXT TEXT
+    let inventoryContext;
+    if (resultsFound === 0) {
+      inventoryContext = "No books in the library inventory match this query.";
+    } else {
+      inventoryContext = books
+        .map((b, index) => {
+          // safe field extraction
+          const title = String(b.title || "Unknown Title").trim();
+          const author = String(b.author || "Unknown Author").trim();
+          const copies = Number.isInteger(b.copies) ? b.copies : 0;
+          const location = String(b.location || "Unknown Location").trim();
+          return `• ${index + 1}. Title: ${title}\n  Author: ${author}\n  Copies: ${copies}\n  Location: ${location}`;
+        })
+        .join("\n\n");
+    }
+
+    // ————————————————
+    // 4️⃣ BUILD AI PROMPT (robust + instructive)
+const prompt = `
+You are Libra, an expert library assistant AI.
+
+Below are books from the library inventory matching the user’s query:
+
+${inventoryContext}
+
+User query:
+"${query}"
+
+Answer the query using ONLY the inventory above.
+
+RULES:
+1. Provide exactly up to 5 book entries maximum.
+2. Do NOT list more than 5.
+3. Each entry must be formatted as:
+   1. Title: …
+      Author: …
+      Copies: …
+      Location: …
+4. After listing the books (or saying none are available), output the single token:
+   [END_OF_ANSWER]
+5. Do NOT generate anything after [END_OF_ANSWER].
+
+Start your answer now:
+`;
+
+
+
+    // ————————————————
+    // 5️⃣ CALL watsonx.ai GRANITE (safely)
+const aiResponse = await axios.post(
+  `${process.env.IBM_URL}/ml/v1/text/generation?version=2024-05-31`,
+  {
+    model_id: "ibm/granite-3-3-8b-instruct",
+    input: prompt,
+    parameters: {
+      max_new_tokens: 400,  // larger budget
+      temperature: 0.0,
+      stop_sequences: ["[END_OF_ANSWER]"]  // safe stop delimiter
+    },
+    project_id: process.env.PROJECT_ID,
+  },
+  {
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+  }
+);
+
+
+    // ————————————————
+    // 6️⃣ EXTRACT RAW MODEL OUTPUT
+    const rawReply = aiResponse.data.results?.[0]?.generated_text || "";
+
+    // ————————————————
+    // 7️⃣ CLEAN & VALIDATE AI OUTPUT
+    // Remove accidental prompt fragments
+    let formattedReply = rawReply
+      .replace(/Below is a list of library inventory items that may match the student's request:/gi, "")
+      .replace(/USER QUERY:/gi, "")
+      .replace(/INSTRUCTIONS:/gi, "")
+      .trim();
+    
+      formattedReply = formattedReply
+  .replace(/\[END_OF_ANSWER\]/gi, "")
+  .replace(/\[LIBRA_END\]/gi, "")
+  .replace(/\[STOP\]/gi, "")
+  .trim();
+
+    // Guaranteed fallback
+    if (!formattedReply || formattedReply.length < 3) {
+      formattedReply = "Not available in the library inventory.";
+    }
+
+    // ————————————————
+    // 8️⃣ SEND RESPONSE
+    res.json({
+      ok: true,
+      query,
+      resultsFound,
+      reply: formattedReply
+    });
   } catch (error) {
-    console.error("❌ watsonx.ai chat error:", error.response?.data || error.message);
-    res.status(500).json({ ok: false, error: "Failed to generate AI reply" });
+    console.error("❌ ask-ai error:", {
+      message: error.message,
+      details: error.response?.data || null
+    });
+    res.status(500).json({
+      ok: false,
+      error: "AI generation failed or search failed",
+      details: error.response?.data || error.message
+    });
   }
 });
+
+
+
+
+
+
+
+
 
 
 // ---------------- Start Server ----------------

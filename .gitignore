@@ -2,3 +2,5 @@
 node_modules/
 keys
 *.log
+# ignore inventory import file
+books.json

@@ -1,7 +1,7 @@
 
 # Library AI Backend
 
-> Lightweight Node.js backend for serving and searching a books catalog (Library-ai-backend).
+> AI CHATBOT for serving and searching a books catalog .
 
 ## Table of Contents
 - [About](#about)

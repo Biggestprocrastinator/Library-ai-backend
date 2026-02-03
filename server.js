@@ -299,10 +299,27 @@ app.post("/import-books", async (req, res) => {
       fs.readFileSync("books.json", "utf8")
     );
 
+    // Attach _rev for existing docs so bulk update doesn't conflict
+    const existing = await cloudant.postAllDocs({
+      db: DB,
+      includeDocs: false,
+      limit: 10000
+    });
+    const revMap = new Map(
+      existing.result.rows.map(r => [r.id, r.value?.rev]).filter(([id, rev]) => id && rev)
+    );
+
+    const docsToUpsert = books.map(b => {
+      const doc = { ...b };
+      const rev = revMap.get(doc._id);
+      if (rev) doc._rev = rev;
+      return doc;
+    });
+
     const response = await cloudant.postBulkDocs({
       db: DB,
       bulkDocs: {
-        docs: books
+        docs: docsToUpsert
       }
     });
 
@@ -489,7 +506,32 @@ async function searchBooks(userQuery) {
 
     const tokens = Array.from(tokenSet);
 
-    // 2️⃣ If semantic search enabled, try embeddings first
+    const codingKeywords = new Set([
+      "coding","programming","program","software","computer","cs","dsa","algorithm","algorithms",
+      "structures","datastructures","data-structures","data structure","data structures",
+      "compiler","java","python","javascript","typescript","c++","cpp","c#","csharp"
+    ]);
+    const looksLikeCodingQuery = tokens.some(t => codingKeywords.has(t));
+
+    // Stricter DSA intent: require algorithm/data-structure indicators, not generic "data"
+    const dsaIndicators = [
+      "dsa","algorithm","algorithms","data structure","data structures","data-structure","data-structures","datastructures"
+    ];
+    const looksLikeDSAQuery = tokens.some(t => dsaIndicators.includes(t)) || /data\s+structure|algorithms?/i.test(userQuery);
+
+    function isCodingBook(b) {
+      const t = String(b?.title || "").toLowerCase();
+      const a = String(b?.author || "").toLowerCase();
+      return Array.from(codingKeywords).some(k => t.includes(k) || a.includes(k));
+    }
+
+    function isDSABook(b) {
+      const t = String(b?.title || "").toLowerCase();
+      return dsaIndicators.some(k => t.includes(k));
+    }
+
+    // 2️⃣ Hybrid search: semantic + keyword
+    let semanticDocs = [];
     if (SEMANTIC_SEARCH) {
       try {
         const queryEmb = (await getEmbeddings([userQuery]))[0];
@@ -500,7 +542,7 @@ async function searchBooks(userQuery) {
             limit: 5000
           });
 
-          const scored = allDocs.result.rows
+          semanticDocs = allDocs.result.rows
             .map(r => r.doc)
             .filter(d => Array.isArray(d?.embedding))
             .map(d => ({
@@ -508,12 +550,7 @@ async function searchBooks(userQuery) {
               score: cosineSimilarity(queryEmb, d.embedding)
             }))
             .sort((a, b) => b.score - a.score)
-            .slice(0, 5)
-            .map(x => x.doc);
-
-          if (scored.length > 0) {
-            return scored;
-          }
+            .slice(0, 20);
         }
       } catch (e) {
         console.warn("⚠️ Semantic search failed, falling back to keyword search:", e.message);
@@ -553,7 +590,50 @@ async function searchBooks(userQuery) {
       }
     }
 
-    return docs;
+    // 5️⃣ Merge semantic + keyword (hybrid) with ranking
+    const ignoreTokens = new Set(["under","below","less","than","upto","up","to","pages","page"]);
+    const queryContentTokens = tokens.filter(t => /[a-z]/i.test(t) && !ignoreTokens.has(t));
+
+    function computeKeywordScore(doc) {
+      const text = `${doc?.title || ""} ${doc?.author || ""}`.toLowerCase();
+      let count = 0;
+      for (const t of queryContentTokens) {
+        if (text.includes(t)) count += 1;
+      }
+      let score = 1 + count / 10;
+      if (looksLikeCodingQuery && Array.from(codingKeywords).some(k => text.includes(k))) {
+        score += 0.5;
+      }
+      return score;
+    }
+
+    const keywordDocs = docs.map(d => ({
+      doc: d,
+      score: computeKeywordScore(d)
+    }));
+
+    const combinedRaw = [...keywordDocs, ...semanticDocs];
+    const bestById = new Map();
+    for (const item of combinedRaw) {
+      const id = item?.doc?._id || item?.doc?.id;
+      if (!id) continue;
+      const prev = bestById.get(id);
+      if (!prev || item.score > prev.score) {
+        bestById.set(id, item);
+      }
+    }
+
+    let combined = Array.from(bestById.values())
+      .sort((a, b) => b.score - a.score)
+      .map(x => x.doc);
+
+    if (looksLikeDSAQuery) {
+      combined = combined.filter(isDSABook);
+    } else if (looksLikeCodingQuery) {
+      combined = combined.filter(isCodingBook);
+    }
+
+    return combined.slice(0, 5);
   } catch (e) {
     console.error("❌ Cloudant Search Error:", e.response?.data || e.message);
     return [];
@@ -585,6 +665,10 @@ app.post("/ask-ai", async (req, res) => {
     if (!query || typeof query !== "string" || query.trim().length === 0) {
       return res.status(400).json({ ok: false, error: "Missing or invalid query text" });
     }
+
+    // Optional page-limit intent (e.g., "under 400 pages", "less than 350 pages")
+    const pageLimitMatch = query.toLowerCase().match(/\b(?:under|below|less\s+than|upto|up\s+to)\s+(\d{2,4})\s*pages?\b/);
+    const pageLimit = pageLimitMatch ? Number(pageLimitMatch[1]) : null;
 
     // ————————————————
     // 1️⃣ GET IBM TOKEN
@@ -631,7 +715,12 @@ app.post("/ask-ai", async (req, res) => {
     
     // ————————————————
     // 2️⃣ SEARCH INVENTORY (full-text Lucene search)
-    const books = await searchBooks(query);
+    let books = await searchBooks(query);
+
+    // Apply page filter if requested and field exists
+    if (pageLimit && Array.isArray(books)) {
+      books = books.filter(b => Number.isFinite(b?.max_pages) && b.max_pages <= pageLimit);
+    }
 
     // Build number of matches
     const resultsFound = Array.isArray(books) ? books.length : 0;
@@ -649,7 +738,9 @@ app.post("/ask-ai", async (req, res) => {
           const author = String(b.author || "Unknown Author").trim();
           const copies = Number.isInteger(b.copies) ? b.copies : 0;
           const location = String(b.location || "Unknown Location").trim();
-          return `• ${index + 1}. Title: ${title}\n  Author: ${author}\n  Copies: ${copies}\n  Location: ${location}`;
+          const maxPages = Number.isInteger(b.max_pages) ? b.max_pages : null;
+          const pagesLine = maxPages ? `\n  Max Pages: ${maxPages}` : "";
+          return `• ${index + 1}. Title: ${title}\n  Author: ${author}\n  Copies: ${copies}\n  Location: ${location}${pagesLine}`;
         })
         .join("\n\n");
     }
@@ -676,6 +767,7 @@ RULES:
       Author: …
       Copies: …
       Location: …
+      Max Pages: …
 4. After listing the books (or saying none are available), output the single token:
    [END_OF_ANSWER]
 5. Do NOT generate anything after [END_OF_ANSWER].

@@ -10,6 +10,26 @@ const TypingIndicator = () => (
   </div>
 );
 
+function parseBookReply(text) {
+  if (!text || /not available|no books/i.test(text)) return null;
+  const blocks = text.split(/\n(?=\d+\.\s+Title:)/).map(b => b.trim()).filter(Boolean);
+  const items = [];
+
+  for (const block of blocks) {
+    const title = block.match(/Title:\s*(.*)/i)?.[1]?.trim();
+    const author = block.match(/Author:\s*(.*)/i)?.[1]?.trim();
+    const copies = block.match(/Copies:\s*(.*)/i)?.[1]?.trim();
+    const location = block.match(/Location:\s*(.*)/i)?.[1]?.trim();
+    const maxPages = block.match(/Max Pages:\s*(.*)/i)?.[1]?.trim();
+
+    if (title) {
+      items.push({ title, author, copies, location, maxPages });
+    }
+  }
+
+  return items.length > 0 ? items : null;
+}
+
 export default function LibraryAssistant() {
   const [query, setQuery] = useState("");
   const [messages, setMessages] = useState([]);
@@ -29,7 +49,7 @@ export default function LibraryAssistant() {
 
     try {
       const res = await axios.post(
-        "https://library-ai-backend.onrender.com/ask-ai",
+        "http://localhost:5000/ask-ai",
         { query }
       );
 
@@ -74,11 +94,29 @@ export default function LibraryAssistant() {
         {messages.map((m, i) => (
           <div key={i} className={`message-row ${m.role}`}>
             <div className={`msg ${m.role}`}>
-              {m.role === "ai" ? (
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                  {m.text}
-                </ReactMarkdown>
-              ) : (
+              {m.role === "ai" ? (() => {
+                const books = parseBookReply(m.text);
+                if (books) {
+                  return (
+                    <div className="book-list">
+                      {books.map((b, idx) => (
+                        <div key={idx} className="book-card">
+                          <div className="book-title">{b.title}</div>
+                          {b.author && <div className="book-field"><span>Author:</span> {b.author}</div>}
+                          {b.copies && <div className="book-field"><span>Copies:</span> {b.copies}</div>}
+                          {b.location && <div className="book-field"><span>Location:</span> {b.location}</div>}
+                          {b.maxPages && <div className="book-field"><span>Max Pages:</span> {b.maxPages}</div>}
+                        </div>
+                      ))}
+                    </div>
+                  );
+                }
+                return (
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                    {m.text}
+                  </ReactMarkdown>
+                );
+              })() : (
                 m.text
               )}
             </div>

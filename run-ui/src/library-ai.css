@@ -97,6 +97,34 @@
   border: 1px solid #1f2937;
 }
 
+/* Book cards */
+.book-list {
+  display: grid;
+  gap: 12px;
+}
+
+.book-card {
+  border: 1px solid #1f2937;
+  background: #0f1525;
+  border-radius: 12px;
+  padding: 12px 14px;
+}
+
+.book-title {
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+
+.book-field {
+  font-size: 14px;
+  color: #cbd5e1;
+}
+
+.book-field span {
+  color: #93c5fd;
+  font-weight: 600;
+}
+
 /* Markdown tables */
 .msg.ai table {
   width: 100%;

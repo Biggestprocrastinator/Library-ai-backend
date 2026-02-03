@@ -4,3 +4,11 @@ keys
 *.log
 # ignore inventory import file
 books.json
+
+run-ui/.env
+node_modules/
+run-ui/node_modules/
+run-ui.zip
+models.txt
+server old..txt
+books.json

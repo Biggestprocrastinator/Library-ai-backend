@@ -35,6 +35,7 @@ export default function LibraryAssistant() {
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(false);
   const bottomRef = useRef(null);
+  const apiBase = (import.meta.env.VITE_API_URL || "http://localhost:5000").replace(/\/$/, "");
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -49,7 +50,7 @@ export default function LibraryAssistant() {
 
     try {
       const res = await axios.post(
-        "https://library-ai-backend.onrender.com/ask-ai",
+        `${apiBase}/ask-ai`,
         { query }
       );
 

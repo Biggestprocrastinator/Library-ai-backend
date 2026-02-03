@@ -1,10 +1,11 @@
-// server.js
+
 import express from "express";
 import dotenv from "dotenv";
 import cors from "cors";
 import { CloudantV1 } from "@ibm-cloud/cloudant";
 import { IamAuthenticator } from "ibm-cloud-sdk-core";
 import axios from "axios";
+import fs from "fs";
 
 dotenv.config();
 const app = express();
@@ -27,6 +28,11 @@ const cloudant = CloudantV1.newInstance({
 });
 
 const DB = process.env.CLOUDANT_DB;
+// Embedding model (from your /list-models output)
+const EMBED_MODEL = process.env.EMBED_MODEL || "ibm/slate-30m-english-rtrvr-v2";
+const EMBED_BATCH = Number(process.env.EMBED_BATCH || 50);
+const SEMANTIC_SEARCH = (process.env.SEMANTIC_SEARCH || "true").toLowerCase() === "true";
+const IBM_API_VERSION = process.env.IBM_API_VERSION || "2024-05-31";
 
 // ---------------- watsonx.ai Auth ----------------
 async function getAccessToken() {
@@ -46,6 +52,51 @@ async function getAccessToken() {
   }
 }
 
+// ---------------- watsonx.ai Embeddings ----------------
+async function getEmbeddings(inputs) {
+  try {
+    const token = await getAccessToken();
+    const response = await axios.post(
+      `${process.env.IBM_URL}/ml/v1/text/embeddings?version=${IBM_API_VERSION}`,
+      {
+        model_id: EMBED_MODEL,
+        project_id: process.env.PROJECT_ID,
+        inputs
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json"
+        }
+      }
+    );
+
+    return response.data?.results?.map(r => r.embedding) || [];
+  } catch (err) {
+    console.error("❌ Embeddings error:", {
+      message: err.message,
+      status: err.response?.status,
+      data: err.response?.data || null
+    });
+    throw err;
+  }
+}
+
+function cosineSimilarity(a, b) {
+  if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return 0;
+  let dot = 0;
+  let normA = 0;
+  let normB = 0;
+  for (let i = 0; i < a.length; i++) {
+    const x = a[i];
+    const y = b[i];
+    dot += x * y;
+    normA += x * x;
+    normB += y * y;
+  }
+  if (normA === 0 || normB === 0) return 0;
+  return dot / (Math.sqrt(normA) * Math.sqrt(normB));
+}
 // ---------------- Base Route ----------------
 app.get("/", (req, res) => {
   res.json({ message: "✅ Library AI Agent backend is running" });
@@ -66,6 +117,45 @@ app.get("/test-db", async (req, res) => {
   }
 });
 
+// ---------------- Watsonx Model List ----------------
+app.get("/list-models", async (req, res) => {
+  try {
+    const token = await getAccessToken();
+    const { limit, start, filters } = req.query;
+
+    const response = await axios.get(
+      `${process.env.IBM_URL}/ml/v1/foundation_model_specs`,
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: "application/json"
+        },
+        params: {
+          version: IBM_API_VERSION,
+          limit,
+          start,
+          filters
+        }
+      }
+    );
+
+    res.json({
+      ok: true,
+      version: IBM_API_VERSION,
+      total_count: response.data?.total_count,
+      limit: response.data?.limit,
+      resources: response.data?.resources || [],
+      next: response.data?.next || null
+    });
+  } catch (err) {
+    console.error("❌ list-models error:", err.message);
+    res.status(500).json({
+      ok: false,
+      error: err.message,
+      details: err.response?.data || null
+    });
+  }
+});
 
 
 
@@ -73,7 +163,135 @@ app.get("/test-db", async (req, res) => {
 
 
 
-import fs from "fs";
+// ---------------- Title Vocabulary + Auto Synonyms (from books.json) ----------------
+const TITLE_VOCAB = new Set();
+const AUTO_SYNONYMS = {};
+let BOOKS_CACHE = null;
+
+function tokenizeTitle(title) {
+  return String(title || "")
+    .toLowerCase()
+    .split(/[^a-z0-9+#]+/)
+    .filter(t => t && t.length > 2);
+}
+
+function loadTitleVocabFromFile() {
+  try {
+    if (!fs.existsSync("books.json")) return;
+    const books = JSON.parse(fs.readFileSync("books.json", "utf8"));
+    BOOKS_CACHE = books;
+    for (const b of books) {
+      const title = b?.title || "";
+      for (const t of tokenizeTitle(title)) {
+        TITLE_VOCAB.add(t);
+      }
+    }
+  } catch (err) {
+    console.warn("⚠️ Failed to load books.json for title vocab:", err.message);
+  }
+}
+
+loadTitleVocabFromFile();
+
+function buildAutoSynonymsFromTitles() {
+  if (!Array.isArray(BOOKS_CACHE)) return;
+
+  const stop = new Set([
+    "and","for","the","with","using","guide","book","text","textbook","vol","volume",
+    "edition","principles","introduction","approach","basic","advanced","course",
+    "students","student","units","center","modern","engineering","engineers"
+  ]);
+
+  const co = new Map(); // token -> Map(otherToken -> count)
+
+  for (const b of BOOKS_CACHE) {
+    const tokens = tokenizeTitle(b?.title || "").filter(t => !stop.has(t));
+    const uniq = Array.from(new Set(tokens));
+    for (let i = 0; i < uniq.length; i++) {
+      const a = uniq[i];
+      if (!co.has(a)) co.set(a, new Map());
+      const mapA = co.get(a);
+      for (let j = 0; j < uniq.length; j++) {
+        if (i === j) continue;
+        const bTok = uniq[j];
+        mapA.set(bTok, (mapA.get(bTok) || 0) + 1);
+      }
+    }
+  }
+
+  const MAX_SYNS = 6;
+  const MIN_COUNT = 2;
+
+  for (const [token, counts] of co.entries()) {
+    const sorted = Array.from(counts.entries())
+      .filter(([, c]) => c >= MIN_COUNT)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, MAX_SYNS)
+      .map(([t]) => t);
+    if (sorted.length > 0) {
+      AUTO_SYNONYMS[token] = sorted;
+    }
+  }
+}
+
+buildAutoSynonymsFromTitles();
+
+// ---------------- Embedding Build Route ----------------
+app.post("/build-embeddings", async (req, res) => {
+  try {
+    const force = Boolean(req.body?.force);
+
+    const allDocs = await cloudant.postAllDocs({
+      db: DB,
+      includeDocs: true,
+      limit: 5000
+    });
+
+    const docs = allDocs.result.rows
+      .map(r => r.doc)
+      .filter(Boolean);
+
+    const toEmbed = docs.filter(d => force || !Array.isArray(d.embedding));
+
+    if (toEmbed.length === 0) {
+      return res.json({ ok: true, updated: 0, total: docs.length, message: "No documents need embedding." });
+    }
+
+    let updated = 0;
+    for (let i = 0; i < toEmbed.length; i += EMBED_BATCH) {
+      const batch = toEmbed.slice(i, i + EMBED_BATCH);
+      const inputs = batch.map(d => {
+        const title = String(d.title || "").trim();
+        const author = String(d.author || "").trim();
+        return `${title}. ${author}`.trim();
+      });
+
+      const embeddings = await getEmbeddings(inputs);
+      const updatedDocs = batch.map((d, idx) => ({
+        ...d,
+        embedding: embeddings[idx],
+        embedding_model: EMBED_MODEL,
+        embedding_updated_at: new Date().toISOString()
+      }));
+
+      const bulkResp = await cloudant.postBulkDocs({
+        db: DB,
+        bulkDocs: { docs: updatedDocs }
+      });
+
+      updated += bulkResp.result.filter(r => r.ok).length;
+    }
+
+    return res.json({ ok: true, updated, total: docs.length, model: EMBED_MODEL });
+  } catch (err) {
+    console.error("❌ build-embeddings error:", err.message);
+    res.status(500).json({
+      ok: false,
+      error: err.message,
+      details: err.response?.data || null
+    });
+  }
+});
 
 app.post("/import-books", async (req, res) => {
   try {
@@ -117,28 +335,208 @@ async function searchBooks(userQuery) {
       "hi","hello","hey"
     ]);
 
-    const tokens = userQuery
+    const rawTokens = userQuery
       .toLowerCase()
       .split(/\W+/)
       .filter(w => w && w.length > 2 && !stopWords.has(w));
 
-    if (tokens.length === 0) {
+    if (rawTokens.length === 0) {
       return [];
     }
 
-    // 2️⃣ Build Lucene query
+    // 1b️⃣ Synonym/topic expansion (keep small + explicit)
+    // Add more as your dataset grows.
+    const synonymMap = {
+      // Math
+      algebra: ["math", "mathematics", "linear", "equations"],
+      geometry: ["math", "mathematics", "shapes", "proofs"],
+      calculus: ["math", "mathematics", "differential", "integral"],
+      trigonometry: ["math", "mathematics", "angles", "triangles"],
+      statistics: ["math", "mathematics", "probability", "data", "analytics"],
+      probability: ["math", "mathematics", "statistics", "stochastic"],
+      linear: ["algebra", "math", "mathematics"],
+      discrete: ["math", "mathematics", "structures", "logic"],
+      optimization: ["math", "mathematics", "operations", "research"],
+      "operations-research": ["optimization", "math", "mathematics"],
+
+      // Programming / CS
+      "c++": ["cpp", "programming", "coding", "software", "computer", "cs"],
+      cpp: ["c++", "programming", "coding", "software", "computer", "cs"],
+      "c#": ["csharp", "programming", "coding", "software", "computer", "cs"],
+      csharp: ["c#", "programming", "coding", "software", "computer", "cs"],
+      c: ["programming", "coding", "software", "computer", "cs"],
+      java: ["programming", "coding", "software", "computer", "cs"],
+      python: ["programming", "coding", "software", "computer", "cs"],
+      javascript: ["programming", "coding", "software", "computer", "cs", "web"],
+      typescript: ["programming", "coding", "software", "computer", "cs", "web"],
+      programming: ["coding", "software", "computer", "cs"],
+      coding: ["programming", "software", "computer", "cs"],
+      software: ["programming", "coding", "computer", "cs"],
+      computer: ["programming", "coding", "software", "cs"],
+      cs: ["computer", "science", "programming", "coding", "software"],
+
+      // Data Structures & Algorithms
+      dsa: ["data", "structures", "algorithms", "coding", "programming", "cs"],
+      algorithm: ["algorithms", "coding", "programming", "cs"],
+      algorithms: ["algorithm", "coding", "programming", "cs"],
+      datastructure: ["data", "structures", "coding", "programming", "cs"],
+      "data-structure": ["data", "structures", "coding", "programming", "cs"],
+      "data-structures": ["data", "structures", "coding", "programming", "cs"],
+      structures: ["data", "structures", "dsa", "cs"],
+
+      // Databases / Data
+      database: ["db", "data", "sql", "storage"],
+      databases: ["database", "db", "data", "sql", "storage"],
+      db: ["database", "data", "sql", "storage"],
+      sql: ["database", "db", "data", "query"],
+      nosql: ["database", "db", "data", "storage"],
+      data: ["analytics", "database", "statistics"],
+      analytics: ["data", "statistics", "business"],
+
+      // Web / Networking / Security
+      web: ["internet", "network", "http", "www"],
+      networking: ["network", "communications", "protocols"],
+      network: ["networking", "communications", "protocols"],
+      security: ["cyber", "cryptography", "network", "systems"],
+      cyber: ["security", "cryptography", "network", "systems"],
+      cryptography: ["security", "cyber", "encryption"],
+      encryption: ["cryptography", "security"],
+
+      // Operating Systems / Systems
+      os: ["operating", "systems", "kernel", "computer"],
+      operating: ["os", "systems", "kernel"],
+      systems: ["system", "computer", "os"],
+      system: ["systems", "computer", "os"],
+      linux: ["operating", "systems", "unix"],
+      unix: ["operating", "systems", "linux"],
+
+      // Electronics / Electrical / Communication
+      electronics: ["electronic", "circuits", "electrical"],
+      electronic: ["electronics", "circuits", "electrical"],
+      circuits: ["electronics", "electrical"],
+      electrical: ["electronics", "circuits", "power"],
+      power: ["electrical", "energy", "machines"],
+      communication: ["communications", "signal", "network"],
+      communications: ["communication", "signal", "network"],
+      signal: ["signals", "communication", "communications"],
+      signals: ["signal", "communication", "communications"],
+
+      // Mechanical / Civil / Materials
+      mechanics: ["mechanical", "physics", "machines"],
+      mechanical: ["mechanics", "machines", "engineering"],
+      thermodynamics: ["thermal", "heat", "energy", "mechanics"],
+      fluid: ["fluids", "mechanics", "hydraulics"],
+      fluids: ["fluid", "mechanics", "hydraulics"],
+      materials: ["material", "metallurgy", "engineering"],
+      material: ["materials", "metallurgy", "engineering"],
+      metallurgy: ["materials", "material", "engineering"],
+
+      // Business / Management
+      management: ["business", "strategy", "operations"],
+      business: ["management", "finance", "economics"],
+      finance: ["business", "accounting", "economics"],
+      accounting: ["finance", "business", "economics"],
+      economics: ["business", "finance", "management"],
+
+      // AI / ML / Data Science
+      ai: ["artificial", "intelligence", "machine", "learning", "ml"],
+      artificial: ["ai", "intelligence"],
+      intelligence: ["ai", "artificial"],
+      ml: ["machine", "learning", "ai"],
+      machine: ["learning", "ai"],
+      learning: ["machine", "ai", "ml"],
+      "data-science": ["data", "analytics", "statistics", "ml"]
+    };
+
+    const tokenSet = new Set(rawTokens);
+    rawTokens.forEach(t => {
+      const extras = synonymMap[t];
+      if (extras && Array.isArray(extras)) {
+        extras.forEach(x => tokenSet.add(x));
+      }
+      const auto = AUTO_SYNONYMS[t];
+      if (auto && Array.isArray(auto)) {
+        auto.forEach(x => tokenSet.add(x));
+      }
+    });
+
+    // 1c️⃣ Morphological variants based on title vocabulary
+    function addIfInVocab(word) {
+      if (word && TITLE_VOCAB.has(word)) {
+        tokenSet.add(word);
+      }
+    }
+
+    rawTokens.forEach(t => {
+      // plural/singular
+      if (t.endsWith("ies") && t.length > 4) addIfInVocab(t.slice(0, -3) + "y");
+      if (t.endsWith("es") && t.length > 4) addIfInVocab(t.slice(0, -2));
+      if (t.endsWith("s") && t.length > 3) addIfInVocab(t.slice(0, -1));
+      if (!t.endsWith("s")) {
+        addIfInVocab(t + "s");
+        addIfInVocab(t + "es");
+      }
+
+      // ics <-> ic (electronics/electronic)
+      if (t.endsWith("ics") && t.length > 4) addIfInVocab(t.slice(0, -1));
+      if (t.endsWith("ic") && t.length > 3) addIfInVocab(t + "s");
+
+      // ing -> base
+      if (t.endsWith("ing") && t.length > 5) {
+        addIfInVocab(t.slice(0, -3));
+      }
+    });
+
+    const tokens = Array.from(tokenSet);
+
+    // 2️⃣ If semantic search enabled, try embeddings first
+    if (SEMANTIC_SEARCH) {
+      try {
+        const queryEmb = (await getEmbeddings([userQuery]))[0];
+        if (queryEmb && Array.isArray(queryEmb)) {
+          const allDocs = await cloudant.postAllDocs({
+            db: DB,
+            includeDocs: true,
+            limit: 5000
+          });
+
+          const scored = allDocs.result.rows
+            .map(r => r.doc)
+            .filter(d => Array.isArray(d?.embedding))
+            .map(d => ({
+              doc: d,
+              score: cosineSimilarity(queryEmb, d.embedding)
+            }))
+            .sort((a, b) => b.score - a.score)
+            .slice(0, 5)
+            .map(x => x.doc);
+
+          if (scored.length > 0) {
+            return scored;
+          }
+        }
+      } catch (e) {
+        console.warn("⚠️ Semantic search failed, falling back to keyword search:", e.message);
+      }
+    }
+
+    // 3️⃣ Build Lucene query
     const terms = [];
     tokens.forEach(t => {
       const clean = t.replace(/[^a-z0-9]/gi, "").trim();
       if (clean) {
         terms.push(`title:${clean}`, `author:${clean}`);
+        // Light wildcard for partial matches (e.g., "math" -> "mathematics")
+        if (clean.length >= 4) {
+          terms.push(`title:${clean}*`);
+        }
       }
     });
 
     // Join with OR for ANY match
     const luceneQuery = terms.join(" OR ");
 
-    // 3️⃣ Execute Cloudant full-text search
+    // 4️⃣ Execute Cloudant full-text search
     const response = await cloudant.postSearch({
       db: DB,
       ddoc: "book_search",

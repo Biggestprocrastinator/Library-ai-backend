@@ -49,7 +49,7 @@ export default function LibraryAssistant() {
 
     try {
       const res = await axios.post(
-        "http://localhost:5000/ask-ai",
+        "https://library-ai-backend.onrender.com/ask-ai",
         { query }
       );
 

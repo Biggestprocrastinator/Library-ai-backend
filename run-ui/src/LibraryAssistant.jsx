@@ -35,7 +35,7 @@ export default function LibraryAssistant() {
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(false);
   const bottomRef = useRef(null);
-  const apiBase = (import.meta.env.VITE_API_URL || "http://localhost:5000").replace(/\/$/, "");
+  const apiBase = "https://library-ai-backend.onrender.com";
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });

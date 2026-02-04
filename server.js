@@ -728,7 +728,8 @@ app.post("/ask-ai", async (req, res) => {
     // Intent: copies of a specific book/topic (e.g., "how many copies of database books")
     const copiesOfMatch = lowerQ.match(/\bhow\s+many\s+copies\s+(?:of|for)\s+(.+)/);
     if (copiesOfMatch && copiesOfMatch[1]) {
-      const subject = copiesOfMatch[1].trim();
+      let subject = copiesOfMatch[1].trim();
+      subject = subject.replace(/\b(do you have|available|in stock|right now)\b/gi, "").trim();
       const books = await searchBooks(subject);
       const totalCopies = books.reduce((sum, b) => {
         const c = Number.isFinite(b?.copies) ? b.copies : 0;
@@ -740,7 +741,7 @@ app.post("/ask-ai", async (req, res) => {
         query,
         resultsFound: books.length,
         reply: books.length
-          ? `There are ${totalCopies} total copies for "${subject}" across ${books.length} matching book(s).`
+          ? `Found ${books.length} matching book(s) for "${subject}" with a total of ${totalCopies} copies.`
           : `No matching books found for "${subject}".`
       });
     }

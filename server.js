@@ -236,6 +236,159 @@ function buildAutoSynonymsFromTitles() {
 
 buildAutoSynonymsFromTitles();
 
+// ---------------- Synonym Map (shared) ----------------
+const SYNONYM_MAP = {
+  // Math
+  algebra: ["math", "mathematics", "linear", "equations"],
+  geometry: ["math", "mathematics", "shapes", "proofs"],
+  calculus: ["math", "mathematics", "differential", "integral"],
+  trigonometry: ["math", "mathematics", "angles", "triangles"],
+  statistics: ["math", "mathematics", "probability", "data", "analytics"],
+  probability: ["math", "mathematics", "statistics", "stochastic"],
+  linear: ["algebra", "math", "mathematics"],
+  discrete: ["math", "mathematics", "structures", "logic"],
+  optimization: ["math", "mathematics", "operations", "research"],
+  "operations-research": ["optimization", "math", "mathematics"],
+
+  // Programming / CS
+  "c++": ["cpp", "programming", "coding", "software", "computer", "cs"],
+  cpp: ["c++", "programming", "coding", "software", "computer", "cs"],
+  "c#": ["csharp", "programming", "coding", "software", "computer", "cs"],
+  csharp: ["c#", "programming", "coding", "software", "computer", "cs"],
+  c: ["programming", "coding", "software", "computer", "cs"],
+  java: ["programming", "coding", "software", "computer", "cs"],
+  python: ["programming", "coding", "software", "computer", "cs"],
+  javascript: ["programming", "coding", "software", "computer", "cs", "web"],
+  typescript: ["programming", "coding", "software", "computer", "cs", "web"],
+  programming: ["coding", "software", "computer", "cs"],
+  coding: ["programming", "software", "computer", "cs"],
+  software: ["programming", "coding", "computer", "cs"],
+  computer: ["programming", "coding", "software", "cs"],
+  cs: ["computer", "science", "programming", "coding", "software"],
+
+  // Data Structures & Algorithms
+  dsa: ["data", "structures", "algorithms", "coding", "programming", "cs"],
+  algorithm: ["algorithms", "coding", "programming", "cs"],
+  algorithms: ["algorithm", "coding", "programming", "cs"],
+  datastructure: ["data", "structures", "coding", "programming", "cs"],
+  "data-structure": ["data", "structures", "coding", "programming", "cs"],
+  "data-structures": ["data", "structures", "coding", "programming", "cs"],
+  structures: ["data", "structures", "dsa", "cs"],
+
+  // Databases / Data
+  database: ["db", "data", "sql", "storage"],
+  databases: ["database", "db", "data", "sql", "storage"],
+  db: ["database", "data", "sql", "storage"],
+  sql: ["database", "db", "data", "query"],
+  nosql: ["database", "db", "data", "storage"],
+  data: ["analytics", "database", "statistics"],
+  analytics: ["data", "statistics", "business"],
+
+  // Web / Networking / Security
+  web: ["internet", "network", "http", "www"],
+  networking: ["network", "communications", "protocols"],
+  network: ["networking", "communications", "protocols"],
+  security: ["cyber", "cryptography", "network", "systems"],
+  cyber: ["security", "cryptography", "network", "systems"],
+  cryptography: ["security", "cyber", "encryption"],
+  encryption: ["cryptography", "security"],
+
+  // Operating Systems / Systems
+  os: ["operating", "systems", "kernel", "computer"],
+  operating: ["os", "systems", "kernel"],
+  systems: ["system", "computer", "os"],
+  system: ["systems", "computer", "os"],
+  linux: ["operating", "systems", "unix"],
+  unix: ["operating", "systems", "linux"],
+
+  // Electronics / Electrical / Communication
+  electronics: ["electronic", "circuits", "electrical"],
+  electronic: ["electronics", "circuits", "electrical"],
+  circuits: ["electronics", "electrical"],
+  electrical: ["electronics", "circuits", "power"],
+  power: ["electrical", "energy", "machines"],
+  communication: ["communications", "signal", "network"],
+  communications: ["communication", "signal", "network"],
+  signal: ["signals", "communication", "communications"],
+  signals: ["signal", "communication", "communications"],
+
+  // Mechanical / Civil / Materials
+  mechanics: ["mechanical", "physics", "machines"],
+  mechanical: ["mechanics", "machines", "engineering"],
+  thermodynamics: ["thermal", "heat", "energy", "mechanics"],
+  fluid: ["fluids", "mechanics", "hydraulics"],
+  fluids: ["fluid", "mechanics", "hydraulics"],
+  materials: ["material", "metallurgy", "engineering"],
+  material: ["materials", "metallurgy", "engineering"],
+  metallurgy: ["materials", "material", "engineering"],
+
+  // Business / Management
+  management: ["business", "strategy", "operations"],
+  business: ["management", "finance", "economics"],
+  finance: ["business", "accounting", "economics"],
+  accounting: ["finance", "business", "economics"],
+  economics: ["business", "finance", "management"],
+
+  // AI / ML / Data Science
+  ai: ["artificial", "intelligence", "machine", "learning", "ml"],
+  artificial: ["ai", "intelligence"],
+  intelligence: ["ai", "artificial"],
+  ml: ["machine", "learning", "ai"],
+  machine: ["learning", "ai"],
+  learning: ["machine", "ai", "ml"],
+  "data-science": ["data", "analytics", "statistics", "ml"]
+};
+
+function getExpandedTokens(text) {
+  const stopWords = new Set([
+    "do","you","have","the","a","an","is","are",
+    "books","book","any","of","for","with","and",
+    "please","want","need","show","find","about",
+    "hi","hello","hey"
+  ]);
+
+  const rawTokens = String(text || "")
+    .toLowerCase()
+    .split(/\W+/)
+    .filter(w => w && w.length > 2 && !stopWords.has(w));
+
+  if (rawTokens.length === 0) return [];
+
+  const tokenSet = new Set(rawTokens);
+  rawTokens.forEach(t => {
+    const extras = SYNONYM_MAP[t];
+    if (extras && Array.isArray(extras)) {
+      extras.forEach(x => tokenSet.add(x));
+    }
+    const auto = AUTO_SYNONYMS[t];
+    if (auto && Array.isArray(auto)) {
+      auto.forEach(x => tokenSet.add(x));
+    }
+  });
+
+  // Morphological variants based on title vocabulary
+  function addIfInVocab(word) {
+    if (word && TITLE_VOCAB.has(word)) {
+      tokenSet.add(word);
+    }
+  }
+
+  rawTokens.forEach(t => {
+    if (t.endsWith("ies") && t.length > 4) addIfInVocab(t.slice(0, -3) + "y");
+    if (t.endsWith("es") && t.length > 4) addIfInVocab(t.slice(0, -2));
+    if (t.endsWith("s") && t.length > 3) addIfInVocab(t.slice(0, -1));
+    if (!t.endsWith("s")) {
+      addIfInVocab(t + "s");
+      addIfInVocab(t + "es");
+    }
+    if (t.endsWith("ics") && t.length > 4) addIfInVocab(t.slice(0, -1));
+    if (t.endsWith("ic") && t.length > 3) addIfInVocab(t + "s");
+    if (t.endsWith("ing") && t.length > 5) addIfInVocab(t.slice(0, -3));
+  });
+
+  return Array.from(tokenSet);
+}
+
 // ---------------- Embedding Build Route ----------------
 app.post("/build-embeddings", async (req, res) => {
   try {
@@ -344,167 +497,11 @@ app.post("/import-books", async (req, res) => {
 
 async function searchBooks(userQuery) {
   try {
-    // 1️⃣ Normalization + stop-words removal
-    const stopWords = new Set([
-      "do","you","have","the","a","an","is","are",
-      "books","book","any","of","for","with","and",
-      "please","want","need","show","find","about",
-      "hi","hello","hey"
-    ]);
+    const tokens = getExpandedTokens(userQuery);
 
-    const rawTokens = userQuery
-      .toLowerCase()
-      .split(/\W+/)
-      .filter(w => w && w.length > 2 && !stopWords.has(w));
-
-    if (rawTokens.length === 0) {
+    if (tokens.length === 0) {
       return [];
     }
-
-    // 1b️⃣ Synonym/topic expansion (keep small + explicit)
-    // Add more as your dataset grows.
-    const synonymMap = {
-      // Math
-      algebra: ["math", "mathematics", "linear", "equations"],
-      geometry: ["math", "mathematics", "shapes", "proofs"],
-      calculus: ["math", "mathematics", "differential", "integral"],
-      trigonometry: ["math", "mathematics", "angles", "triangles"],
-      statistics: ["math", "mathematics", "probability", "data", "analytics"],
-      probability: ["math", "mathematics", "statistics", "stochastic"],
-      linear: ["algebra", "math", "mathematics"],
-      discrete: ["math", "mathematics", "structures", "logic"],
-      optimization: ["math", "mathematics", "operations", "research"],
-      "operations-research": ["optimization", "math", "mathematics"],
-
-      // Programming / CS
-      "c++": ["cpp", "programming", "coding", "software", "computer", "cs"],
-      cpp: ["c++", "programming", "coding", "software", "computer", "cs"],
-      "c#": ["csharp", "programming", "coding", "software", "computer", "cs"],
-      csharp: ["c#", "programming", "coding", "software", "computer", "cs"],
-      c: ["programming", "coding", "software", "computer", "cs"],
-      java: ["programming", "coding", "software", "computer", "cs"],
-      python: ["programming", "coding", "software", "computer", "cs"],
-      javascript: ["programming", "coding", "software", "computer", "cs", "web"],
-      typescript: ["programming", "coding", "software", "computer", "cs", "web"],
-      programming: ["coding", "software", "computer", "cs"],
-      coding: ["programming", "software", "computer", "cs"],
-      software: ["programming", "coding", "computer", "cs"],
-      computer: ["programming", "coding", "software", "cs"],
-      cs: ["computer", "science", "programming", "coding", "software"],
-
-      // Data Structures & Algorithms
-      dsa: ["data", "structures", "algorithms", "coding", "programming", "cs"],
-      algorithm: ["algorithms", "coding", "programming", "cs"],
-      algorithms: ["algorithm", "coding", "programming", "cs"],
-      datastructure: ["data", "structures", "coding", "programming", "cs"],
-      "data-structure": ["data", "structures", "coding", "programming", "cs"],
-      "data-structures": ["data", "structures", "coding", "programming", "cs"],
-      structures: ["data", "structures", "dsa", "cs"],
-
-      // Databases / Data
-      database: ["db", "data", "sql", "storage"],
-      databases: ["database", "db", "data", "sql", "storage"],
-      db: ["database", "data", "sql", "storage"],
-      sql: ["database", "db", "data", "query"],
-      nosql: ["database", "db", "data", "storage"],
-      data: ["analytics", "database", "statistics"],
-      analytics: ["data", "statistics", "business"],
-
-      // Web / Networking / Security
-      web: ["internet", "network", "http", "www"],
-      networking: ["network", "communications", "protocols"],
-      network: ["networking", "communications", "protocols"],
-      security: ["cyber", "cryptography", "network", "systems"],
-      cyber: ["security", "cryptography", "network", "systems"],
-      cryptography: ["security", "cyber", "encryption"],
-      encryption: ["cryptography", "security"],
-
-      // Operating Systems / Systems
-      os: ["operating", "systems", "kernel", "computer"],
-      operating: ["os", "systems", "kernel"],
-      systems: ["system", "computer", "os"],
-      system: ["systems", "computer", "os"],
-      linux: ["operating", "systems", "unix"],
-      unix: ["operating", "systems", "linux"],
-
-      // Electronics / Electrical / Communication
-      electronics: ["electronic", "circuits", "electrical"],
-      electronic: ["electronics", "circuits", "electrical"],
-      circuits: ["electronics", "electrical"],
-      electrical: ["electronics", "circuits", "power"],
-      power: ["electrical", "energy", "machines"],
-      communication: ["communications", "signal", "network"],
-      communications: ["communication", "signal", "network"],
-      signal: ["signals", "communication", "communications"],
-      signals: ["signal", "communication", "communications"],
-
-      // Mechanical / Civil / Materials
-      mechanics: ["mechanical", "physics", "machines"],
-      mechanical: ["mechanics", "machines", "engineering"],
-      thermodynamics: ["thermal", "heat", "energy", "mechanics"],
-      fluid: ["fluids", "mechanics", "hydraulics"],
-      fluids: ["fluid", "mechanics", "hydraulics"],
-      materials: ["material", "metallurgy", "engineering"],
-      material: ["materials", "metallurgy", "engineering"],
-      metallurgy: ["materials", "material", "engineering"],
-
-      // Business / Management
-      management: ["business", "strategy", "operations"],
-      business: ["management", "finance", "economics"],
-      finance: ["business", "accounting", "economics"],
-      accounting: ["finance", "business", "economics"],
-      economics: ["business", "finance", "management"],
-
-      // AI / ML / Data Science
-      ai: ["artificial", "intelligence", "machine", "learning", "ml"],
-      artificial: ["ai", "intelligence"],
-      intelligence: ["ai", "artificial"],
-      ml: ["machine", "learning", "ai"],
-      machine: ["learning", "ai"],
-      learning: ["machine", "ai", "ml"],
-      "data-science": ["data", "analytics", "statistics", "ml"]
-    };
-
-    const tokenSet = new Set(rawTokens);
-    rawTokens.forEach(t => {
-      const extras = synonymMap[t];
-      if (extras && Array.isArray(extras)) {
-        extras.forEach(x => tokenSet.add(x));
-      }
-      const auto = AUTO_SYNONYMS[t];
-      if (auto && Array.isArray(auto)) {
-        auto.forEach(x => tokenSet.add(x));
-      }
-    });
-
-    // 1c️⃣ Morphological variants based on title vocabulary
-    function addIfInVocab(word) {
-      if (word && TITLE_VOCAB.has(word)) {
-        tokenSet.add(word);
-      }
-    }
-
-    rawTokens.forEach(t => {
-      // plural/singular
-      if (t.endsWith("ies") && t.length > 4) addIfInVocab(t.slice(0, -3) + "y");
-      if (t.endsWith("es") && t.length > 4) addIfInVocab(t.slice(0, -2));
-      if (t.endsWith("s") && t.length > 3) addIfInVocab(t.slice(0, -1));
-      if (!t.endsWith("s")) {
-        addIfInVocab(t + "s");
-        addIfInVocab(t + "es");
-      }
-
-      // ics <-> ic (electronics/electronic)
-      if (t.endsWith("ics") && t.length > 4) addIfInVocab(t.slice(0, -1));
-      if (t.endsWith("ic") && t.length > 3) addIfInVocab(t + "s");
-
-      // ing -> base
-      if (t.endsWith("ing") && t.length > 5) {
-        addIfInVocab(t.slice(0, -3));
-      }
-    });
-
-    const tokens = Array.from(tokenSet);
 
     const codingKeywords = new Set([
       "coding","programming","program","software","computer","cs","dsa","algorithm","algorithms",
@@ -664,6 +661,89 @@ app.post("/ask-ai", async (req, res) => {
     const { query } = req.body;
     if (!query || typeof query !== "string" || query.trim().length === 0) {
       return res.status(400).json({ ok: false, error: "Missing or invalid query text" });
+    }
+
+    // Direct inventory stats queries
+    const lowerQ = query.toLowerCase();
+    const totalCountMatch = lowerQ.match(/\bhow\s+many\s+(books|titles|items)\b/);
+    const availableCountMatch = lowerQ.match(/\bhow\s+many\s+available\s+(books|titles|items)\b/);
+    const copiesMatch = lowerQ.match(/\bhow\s+many\s+copies\b|\btotal\s+copies\b/);
+    const topicCountMatch = lowerQ.match(/\bhow\s+many\s+([a-z0-9+#+-]+)\s+books?\b/);
+
+    if (totalCountMatch || availableCountMatch || copiesMatch || topicCountMatch) {
+      try {
+        let total = 0;
+        let docs = null;
+
+        // Prefer counting actual docs to avoid stale/incorrect doc_count
+        if (totalCountMatch || availableCountMatch || copiesMatch || topicCountMatch) {
+          const allDocs = await cloudant.postAllDocs({
+            db: DB,
+            includeDocs: true,
+            limit: 10000
+          });
+          docs = allDocs.result.rows.map(r => r.doc).filter(Boolean);
+          total = docs.length;
+        } else {
+          const info = await cloudant.getDatabaseInformation({ db: DB });
+          total = info.result?.doc_count ?? 0;
+        }
+
+        if (availableCountMatch || copiesMatch || topicCountMatch) {
+          const availableCount = docs.filter(d => d.available === true).length;
+          const totalCopies = docs.reduce((sum, d) => {
+            const c = Number.isFinite(d?.copies) ? d.copies : 0;
+            return sum + c;
+          }, 0);
+
+          if (topicCountMatch) {
+            const topic = topicCountMatch[1];
+            const topicAliases = new Set(getExpandedTokens(topic));
+            if (topicAliases.size === 0) topicAliases.add(topic.toLowerCase());
+
+            const count = docs.filter(d => {
+              const title = String(d?.title || "").toLowerCase();
+              const author = String(d?.author || "").toLowerCase();
+              return Array.from(topicAliases).some(t => title.includes(t) || author.includes(t));
+            }).length;
+
+            return res.json({
+              ok: true,
+              query,
+              resultsFound: 0,
+              reply: `There are ${count} ${topic} books in the inventory.`
+            });
+          }
+
+          if (availableCountMatch) {
+            return res.json({
+              ok: true,
+              query,
+              resultsFound: 0,
+              reply: `There are ${availableCount} available books in the inventory.`
+            });
+          }
+
+          if (copiesMatch) {
+            return res.json({
+              ok: true,
+              query,
+              resultsFound: 0,
+              reply: `There are ${totalCopies} total copies in the inventory.`
+            });
+          }
+        }
+
+        return res.json({
+          ok: true,
+          query,
+          resultsFound: 0,
+          reply: `There are ${total} books in the library inventory.`
+        });
+      } catch (err) {
+        console.error("❌ Stats query failed:", err.message);
+        return res.status(500).json({ ok: false, error: "Failed to fetch inventory stats" });
+      }
     }
 
     // Optional page-limit intent (e.g., "under 400 pages", "less than 350 pages")

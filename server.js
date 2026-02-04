@@ -276,6 +276,8 @@ const SYNONYM_MAP = {
   structures: ["data", "structures", "dsa", "cs"],
 
   // Databases / Data
+  dbms: ["database", "databases", "db", "sql", "rdbms"],
+  rdbms: ["dbms", "database", "databases", "sql"],
   database: ["db", "data", "sql", "storage"],
   databases: ["database", "db", "data", "sql", "storage"],
   db: ["database", "data", "sql", "storage"],
@@ -498,6 +500,7 @@ app.post("/import-books", async (req, res) => {
 async function searchBooks(userQuery) {
   try {
     const tokens = getExpandedTokens(userQuery);
+    const luceneTokens = tokens;
 
     if (tokens.length === 0) {
       return [];
@@ -556,7 +559,7 @@ async function searchBooks(userQuery) {
 
     // 3️⃣ Build Lucene query
     const terms = [];
-    tokens.forEach(t => {
+    luceneTokens.forEach(t => {
       const clean = t.replace(/[^a-z0-9]/gi, "").trim();
       if (clean) {
         terms.push(`title:${clean}`, `author:${clean}`);
@@ -658,13 +661,111 @@ async function searchBooks(userQuery) {
 // ---------------- Student-Focused Ask AI Route ----------------
 app.post("/ask-ai", async (req, res) => {
   try {
-    const { query } = req.body;
+    const { query, context } = req.body;
     if (!query || typeof query !== "string" || query.trim().length === 0) {
       return res.status(400).json({ ok: false, error: "Missing or invalid query text" });
     }
 
+    // Lightweight follow-up handling using client-provided context
+    const trimmedQuery = query.trim();
+    const lowerQ = trimmedQuery.toLowerCase();
+    const ctx = Array.isArray(context) ? context : [];
+    const lastBot = [...ctx].reverse().find(m => m?.role === "ai")?.text?.toLowerCase() || "";
+    const lastUser = [...ctx].reverse().find(m => m?.role === "user")?.text || "";
+    const levelOnlyRe = /^(beginner|advanced|intermediate)$/i;
+    const lastUserTopic = [...ctx].reverse().find(m => {
+      const text = String(m?.text || "").trim();
+      return m?.role === "user" && text.length > 3 && !levelOnlyRe.test(text) && !/^now\s+advanced$/i.test(text);
+    })?.text || "";
+
+    let effectiveQuery = trimmedQuery;
+    const isLevelOnly = levelOnlyRe.test(trimmedQuery);
+    if (isLevelOnly && lastBot.includes("beginner or advanced")) {
+      effectiveQuery = `${lastUser} ${trimmedQuery}`.trim();
+    } else if (isLevelOnly && lastUserTopic) {
+      // Accept follow-up even if last bot was a list
+      effectiveQuery = `${lastUserTopic} ${trimmedQuery}`.trim();
+    } else if (isLevelOnly && !lastBot) {
+      return res.json({
+        ok: true,
+        query,
+        resultsFound: 0,
+        reply: "Got it. What topic should I recommend books for? For example: programming, physics, math."
+      });
+    }
+    if (/^(ebook|e-book|print|printed|physical)$/i.test(trimmedQuery) && lastBot.includes("print edition or ebook")) {
+      effectiveQuery = `${lastUser} ${trimmedQuery}`.trim();
+    }
+
+    const wantsBeginner = /\bbeginner\b/i.test(effectiveQuery);
+    const wantsAdvanced = /\badvanced\b/i.test(effectiveQuery);
+
+    // Lightweight intent hints for "works now" queries
+    const extraTerms = [];
+    if (/\bexam\b|\bpreparation\b|\bprep\b/i.test(effectiveQuery)) {
+      extraTerms.push("guide", "practice", "review");
+    }
+    if (/\bpractice\b|\bquestions?\b|\bproblem(s)?\b/i.test(effectiveQuery)) {
+      extraTerms.push("practice", "problems", "questions");
+    }
+    if (/\bprojects?\b|\bfinal year\b/i.test(effectiveQuery)) {
+      extraTerms.push("project", "design", "applications");
+    }
+    if (/\bwith\s+diagrams?\b|\bdiagram(s)?\b/i.test(effectiveQuery)) {
+      extraTerms.push("diagram", "illustrated");
+    }
+    if (/\bsimple\b|\beasy\b|\bbasics?\b/i.test(effectiveQuery)) {
+      extraTerms.push("introduction", "basic", "fundamentals");
+    }
+    if (/\bpractical\b|\bexamples?\b/i.test(effectiveQuery)) {
+      extraTerms.push("examples", "applications", "hands-on");
+    }
+    if (/\bgraphics\b/i.test(effectiveQuery)) {
+      extraTerms.push("graphics", "visual");
+    }
+
+    // Intent: copies of a specific book/topic (e.g., "how many copies of database books")
+    const copiesOfMatch = lowerQ.match(/\bhow\s+many\s+copies\s+(?:of|for)\s+(.+)/);
+    if (copiesOfMatch && copiesOfMatch[1]) {
+      const subject = copiesOfMatch[1].trim();
+      const books = await searchBooks(subject);
+      const totalCopies = books.reduce((sum, b) => {
+        const c = Number.isFinite(b?.copies) ? b.copies : 0;
+        return sum + c;
+      }, 0);
+
+      return res.json({
+        ok: true,
+        query,
+        resultsFound: books.length,
+        reply: books.length
+          ? `There are ${totalCopies} total copies for "${subject}" across ${books.length} matching book(s).`
+          : `No matching books found for "${subject}".`
+      });
+    }
+
+    // Intent: availability of a specific book/topic (e.g., "is compiler design available")
+    const availabilityMatch = lowerQ.match(/\b(?:is|are)\s+(.+?)\s+available\b|\bavailability\s+of\s+(.+)/);
+    if (availabilityMatch) {
+      const subject = (availabilityMatch[1] || availabilityMatch[2] || "").trim();
+      if (subject) {
+        const books = await searchBooks(subject);
+        const availableBooks = books.filter(b => b?.available === true);
+        const totalCopies = books.reduce((sum, b) => sum + (Number.isFinite(b?.copies) ? b.copies : 0), 0);
+        const availableCopies = availableBooks.reduce((sum, b) => sum + (Number.isFinite(b?.copies) ? b.copies : 0), 0);
+
+        return res.json({
+          ok: true,
+          query,
+          resultsFound: books.length,
+          reply: books.length
+            ? `Found ${books.length} matching book(s). Available copies: ${availableCopies} (total copies: ${totalCopies}).`
+            : `No matching books found for "${subject}".`
+        });
+      }
+    }
+
     // Direct inventory stats queries
-    const lowerQ = query.toLowerCase();
     const totalCountMatch = lowerQ.match(/\bhow\s+many\s+(books|titles|items)\b/);
     const availableCountMatch = lowerQ.match(/\bhow\s+many\s+available\s+(books|titles|items)\b/);
     const copiesMatch = lowerQ.match(/\bhow\s+many\s+copies\b|\btotal\s+copies\b/);
@@ -747,7 +848,7 @@ app.post("/ask-ai", async (req, res) => {
     }
 
     // Optional page-limit intent (e.g., "under 400 pages", "less than 350 pages")
-    const pageLimitMatch = query.toLowerCase().match(/\b(?:under|below|less\s+than|upto|up\s+to)\s+(\d{2,4})\s*pages?\b/);
+    const pageLimitMatch = effectiveQuery.toLowerCase().match(/\b(?:under|below|less\s+than|upto|up\s+to)\s+(\d{2,4})\s*pages?\b/);
     const pageLimit = pageLimitMatch ? Number(pageLimitMatch[1]) : null;
 
     // ————————————————
@@ -756,7 +857,7 @@ app.post("/ask-ai", async (req, res) => {
     if (!token) throw new Error("Failed to get IBM Access Token");
 
 
-     const lowerQuery = query.toLowerCase().trim();
+     const lowerQuery = effectiveQuery.toLowerCase().trim();
     const BOOK_QUERY_KEYWORDS = [
       "book",
       "books",
@@ -790,16 +891,39 @@ app.post("/ask-ai", async (req, res) => {
     }
     // ————————— End casual query handling —————————
 
+    // (Level prompting removed)
+
     // Continue with inventory search…
 
     
     // ————————————————
     // 2️⃣ SEARCH INVENTORY (full-text Lucene search)
-    let books = await searchBooks(query);
+    // NLP-style query expansion (safe): expand but always search inventory
+    const searchQuery = extraTerms.length > 0
+      ? `${effectiveQuery} ${extraTerms.join(" ")}`.trim()
+      : effectiveQuery;
+
+    let books = await searchBooks(searchQuery);
+
+    // (Level filtering removed)
 
     // Apply page filter if requested and field exists
     if (pageLimit && Array.isArray(books)) {
       books = books.filter(b => Number.isFinite(b?.max_pages) && b.max_pages <= pageLimit);
+    }
+
+    // De-duplicate by title + author
+    if (Array.isArray(books)) {
+      const seen = new Set();
+      books = books.filter(b => {
+        const title = String(b?.title || "").trim().toLowerCase();
+        const author = String(b?.author || "").trim().toLowerCase();
+        const key = `${title}||${author}`;
+        if (!title) return false;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
     }
 
     // Build number of matches

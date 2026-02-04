@@ -239,6 +239,7 @@ buildAutoSynonymsFromTitles();
 // ---------------- Synonym Map (shared) ----------------
 const SYNONYM_MAP = {
   // Math
+  maths: ["math", "mathematics"],
   algebra: ["math", "mathematics", "linear", "equations"],
   geometry: ["math", "mathematics", "shapes", "proofs"],
   calculus: ["math", "mathematics", "differential", "integral"],
@@ -766,10 +767,16 @@ app.post("/ask-ai", async (req, res) => {
     }
 
     // Direct inventory stats queries
-    const totalCountMatch = lowerQ.match(/\bhow\s+many\s+(books|titles|items)\b/);
+    const totalCountMatch = lowerQ.match(/\bhow\s+many\s+(?:total\s+)?(books|titles|items)\b|\btotal\s+(books|titles|items)\b/);
     const availableCountMatch = lowerQ.match(/\bhow\s+many\s+available\s+(books|titles|items)\b/);
     const copiesMatch = lowerQ.match(/\bhow\s+many\s+copies\b|\btotal\s+copies\b/);
-    const topicCountMatch = lowerQ.match(/\bhow\s+many\s+([a-z0-9+#+-]+)\s+books?\b/);
+    let topicCountMatch = lowerQ.match(/\bhow\s+many\s+([a-z0-9+#+-]+)\s+books?\b/);
+    if (topicCountMatch && ["total", "all"].includes(topicCountMatch[1])) {
+      topicCountMatch = null;
+    }
+    if (totalCountMatch) {
+      topicCountMatch = null;
+    }
 
     if (totalCountMatch || availableCountMatch || copiesMatch || topicCountMatch) {
       try {

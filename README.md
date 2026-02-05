@@ -117,7 +117,7 @@ This allows:
 "DSA" → data structures, algorithms
 "coding" → programming, software, CS
 ```
-
+![chatimage3](images/front3.png)
 without relying on brittle keyword rules.
 
 ---
@@ -138,7 +138,7 @@ This guarantees:
 * Exact numerical correctness
 * No hallucinated data
 * Real-time accuracy
-
+![chatimage4](images/front4.png)
 ---
 
 ##  AI Integration

@@ -1004,7 +1004,11 @@ app.post("/ask-ai", async (req, res) => {
     // 3️⃣ BUILD INVENTORY CONTEXT TEXT
     let inventoryContext;
     if (resultsFound === 0) {
-      inventoryContext = "No books in the library inventory match this query.";
+      if (pageLimit) {
+        inventoryContext = `No books match that page limit. All available books appear to be over ${pageLimit} pages.`;
+      } else {
+        inventoryContext = "No books in the library inventory match this query.";
+      }
     } else {
       inventoryContext = books
         .map((b, index) => {

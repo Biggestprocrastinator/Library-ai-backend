@@ -48,10 +48,9 @@ export default function LibraryAssistantAllInOne() {
     setLoading(true);
 
     try {
-      const context = messages;
       const res = await axios.post(
         `${apiBase}/ask-ai`,
-        { query, context }
+        { query }
       );
 
       setMessages((m) => [

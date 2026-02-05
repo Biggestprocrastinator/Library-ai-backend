@@ -248,8 +248,15 @@ const SYNONYM_MAP = {
   probability: ["math", "mathematics", "statistics", "stochastic"],
   linear: ["algebra", "math", "mathematics"],
   discrete: ["math", "mathematics", "structures", "logic"],
+  vector: ["algebra", "math", "mathematics"],
+  differential: ["calculus", "math", "mathematics"],
+  integral: ["calculus", "math", "mathematics"],
+  numerical: ["methods", "math", "mathematics"],
+  numericalmethods: ["methods", "math", "mathematics"],
+  matrices: ["linear", "algebra", "math"],
   optimization: ["math", "mathematics", "operations", "research"],
   "operations-research": ["optimization", "math", "mathematics"],
+  ops: ["operations", "research", "optimization"],
 
   // Programming / CS
   "c++": ["cpp", "programming", "coding", "software", "computer", "cs"],
@@ -261,6 +268,18 @@ const SYNONYM_MAP = {
   python: ["programming", "coding", "software", "computer", "cs"],
   javascript: ["programming", "coding", "software", "computer", "cs", "web"],
   typescript: ["programming", "coding", "software", "computer", "cs", "web"],
+  php: ["programming", "coding", "software", "web"],
+  ruby: ["programming", "coding", "software", "web"],
+  go: ["golang", "programming", "coding", "software"],
+  golang: ["go", "programming", "coding", "software"],
+  swift: ["programming", "coding", "software"],
+  kotlin: ["programming", "coding", "software"],
+  scala: ["programming", "coding", "software"],
+  rust: ["programming", "coding", "software"],
+  perl: ["programming", "coding", "software"],
+  bash: ["shell", "scripting", "linux"],
+  shell: ["scripting", "linux", "unix"],
+  scripting: ["programming", "coding", "automation"],
   programming: ["coding", "software", "computer", "cs"],
   coding: ["programming", "software", "computer", "cs"],
   software: ["programming", "coding", "computer", "cs"],
@@ -275,6 +294,9 @@ const SYNONYM_MAP = {
   "data-structure": ["data", "structures", "coding", "programming", "cs"],
   "data-structures": ["data", "structures", "coding", "programming", "cs"],
   structures: ["data", "structures", "dsa", "cs"],
+  complexity: ["algorithms", "analysis", "cs"],
+  graph: ["graphs", "algorithms", "ds"],
+  graphs: ["graph", "algorithms", "ds"],
 
   // Databases / Data
   dbms: ["database", "databases", "db", "sql", "rdbms"],
@@ -286,15 +308,33 @@ const SYNONYM_MAP = {
   nosql: ["database", "db", "data", "storage"],
   data: ["analytics", "database", "statistics"],
   analytics: ["data", "statistics", "business"],
+  datawarehouse: ["warehouse", "database", "etl", "analytics"],
+  warehouse: ["data", "etl", "analytics"],
+  etl: ["data", "pipeline", "warehouse"],
+  mongodb: ["nosql", "database"],
+  mysql: ["sql", "database"],
+  postgresql: ["sql", "database"],
+  oracle: ["sql", "database"],
 
   // Web / Networking / Security
   web: ["internet", "network", "http", "www"],
   networking: ["network", "communications", "protocols"],
   network: ["networking", "communications", "protocols"],
+  networks: ["network", "networking", "communications"],
+  protocol: ["protocols", "networking"],
+  protocols: ["protocol", "networking"],
+  tcp: ["ip", "networking", "protocols"],
+  udp: ["ip", "networking", "protocols"],
+  http: ["web", "internet"],
+  https: ["web", "security"],
   security: ["cyber", "cryptography", "network", "systems"],
   cyber: ["security", "cryptography", "network", "systems"],
   cryptography: ["security", "cyber", "encryption"],
   encryption: ["cryptography", "security"],
+  firewall: ["security", "network"],
+  malware: ["security", "cyber"],
+  forensics: ["security", "cyber"],
+  hacking: ["security", "cyber"],
 
   // Operating Systems / Systems
   os: ["operating", "systems", "kernel", "computer"],
@@ -303,6 +343,8 @@ const SYNONYM_MAP = {
   system: ["systems", "computer", "os"],
   linux: ["operating", "systems", "unix"],
   unix: ["operating", "systems", "linux"],
+  kernel: ["os", "systems"],
+  windows: ["os", "systems"],
 
   // Electronics / Electrical / Communication
   electronics: ["electronic", "circuits", "electrical"],
@@ -314,6 +356,11 @@ const SYNONYM_MAP = {
   communications: ["communication", "signal", "network"],
   signal: ["signals", "communication", "communications"],
   signals: ["signal", "communication", "communications"],
+  analog: ["electronics", "circuits"],
+  digital: ["electronics", "circuits"],
+  microprocessor: ["processor", "electronics", "computer"],
+  microcontroller: ["embedded", "electronics"],
+  embedded: ["microcontroller", "electronics", "systems"],
 
   // Mechanical / Civil / Materials
   mechanics: ["mechanical", "physics", "machines"],
@@ -324,6 +371,12 @@ const SYNONYM_MAP = {
   materials: ["material", "metallurgy", "engineering"],
   material: ["materials", "metallurgy", "engineering"],
   metallurgy: ["materials", "material", "engineering"],
+  strength: ["materials", "mechanics"],
+  kinematics: ["mechanics", "physics"],
+  dynamics: ["mechanics", "physics"],
+  hydraulics: ["fluid", "mechanics"],
+  manufacturing: ["production", "engineering"],
+  production: ["manufacturing", "engineering"],
 
   // Business / Management
   management: ["business", "strategy", "operations"],
@@ -331,6 +384,9 @@ const SYNONYM_MAP = {
   finance: ["business", "accounting", "economics"],
   accounting: ["finance", "business", "economics"],
   economics: ["business", "finance", "management"],
+  marketing: ["business", "management"],
+  hr: ["management", "business"],
+  operations: ["management", "business"],
 
   // AI / ML / Data Science
   ai: ["artificial", "intelligence", "machine", "learning", "ml"],
@@ -339,7 +395,41 @@ const SYNONYM_MAP = {
   ml: ["machine", "learning", "ai"],
   machine: ["learning", "ai"],
   learning: ["machine", "ai", "ml"],
-  "data-science": ["data", "analytics", "statistics", "ml"]
+  "data-science": ["data", "analytics", "statistics", "ml"],
+  deeplearning: ["deep", "learning", "ai", "ml"],
+  deep: ["learning", "ai", "ml"],
+  neural: ["networks", "ai", "ml"],
+  nlp: ["language", "ai", "ml"],
+  vision: ["computer vision", "ai"],
+  cv: ["computer vision", "ai"],
+
+  // Physics / Chemistry / Biology
+  physics: ["mechanics", "quantum", "thermodynamics"],
+  quantum: ["physics"],
+  optics: ["physics", "light"],
+  chemistry: ["chemical", "chem"],
+  chemical: ["chemistry"],
+  biology: ["bio", "biological"],
+  bio: ["biology"],
+
+  // Civil / Architecture
+  civil: ["construction", "structural", "engineering"],
+  structural: ["civil", "construction"],
+  architecture: ["design", "building"],
+
+  // Cloud / DevOps
+  cloud: ["computing", "aws", "azure", "gcp"],
+  aws: ["cloud", "computing"],
+  azure: ["cloud", "computing"],
+  gcp: ["cloud", "computing"],
+  devops: ["automation", "ci", "cd"],
+  docker: ["containers", "devops"],
+  kubernetes: ["containers", "devops"],
+
+  // Software Engineering
+  se: ["software", "engineering"],
+  testing: ["software", "qa"],
+  qa: ["testing", "software"]
 };
 
 function getExpandedTokens(text) {
@@ -662,44 +752,14 @@ async function searchBooks(userQuery) {
 // ---------------- Student-Focused Ask AI Route ----------------
 app.post("/ask-ai", async (req, res) => {
   try {
-    const { query, context } = req.body;
+    const { query } = req.body;
     if (!query || typeof query !== "string" || query.trim().length === 0) {
       return res.status(400).json({ ok: false, error: "Missing or invalid query text" });
     }
 
-    // Lightweight follow-up handling using client-provided context
     const trimmedQuery = query.trim();
     const lowerQ = trimmedQuery.toLowerCase();
-    const ctx = Array.isArray(context) ? context : [];
-    const lastBot = [...ctx].reverse().find(m => m?.role === "ai")?.text?.toLowerCase() || "";
-    const lastUser = [...ctx].reverse().find(m => m?.role === "user")?.text || "";
-    const levelOnlyRe = /^(beginner|advanced|intermediate)$/i;
-    const lastUserTopic = [...ctx].reverse().find(m => {
-      const text = String(m?.text || "").trim();
-      return m?.role === "user" && text.length > 3 && !levelOnlyRe.test(text) && !/^now\s+advanced$/i.test(text);
-    })?.text || "";
-
-    let effectiveQuery = trimmedQuery;
-    const isLevelOnly = levelOnlyRe.test(trimmedQuery);
-    if (isLevelOnly && lastBot.includes("beginner or advanced")) {
-      effectiveQuery = `${lastUser} ${trimmedQuery}`.trim();
-    } else if (isLevelOnly && lastUserTopic) {
-      // Accept follow-up even if last bot was a list
-      effectiveQuery = `${lastUserTopic} ${trimmedQuery}`.trim();
-    } else if (isLevelOnly && !lastBot) {
-      return res.json({
-        ok: true,
-        query,
-        resultsFound: 0,
-        reply: "Got it. What topic should I recommend books for? For example: programming, physics, math."
-      });
-    }
-    if (/^(ebook|e-book|print|printed|physical)$/i.test(trimmedQuery) && lastBot.includes("print edition or ebook")) {
-      effectiveQuery = `${lastUser} ${trimmedQuery}`.trim();
-    }
-
-    const wantsBeginner = /\bbeginner\b/i.test(effectiveQuery);
-    const wantsAdvanced = /\badvanced\b/i.test(effectiveQuery);
+    const effectiveQuery = trimmedQuery;
 
     // Lightweight intent hints for "works now" queries
     const extraTerms = [];

@@ -119,21 +119,6 @@ without relying on brittle keyword rules.
 
 ---
 
-##  Conversational Context Resolution
-
-The backend maintains **lightweight conversational state** to resolve follow-up queries.
-
-Example:
-
-```
-User: Operating systems books
-User: Beginner
-```
-
-The system infers intent continuity instead of treating the second message as a standalone query.
-
-This mimics **state-aware conversational agents** while remaining backend-safe and stateless at the API level.
-
 ---
 
 ##  Deterministic Inventory Intelligence
@@ -145,8 +130,6 @@ For factual queries such as:
 * copy counts
 * availability checks
 
-The system **bypasses AI entirely** and computes results directly from the database.
-
 This guarantees:
 
 * Exact numerical correctness
@@ -155,7 +138,7 @@ This guarantees:
 
 ---
 
-##  AI Integration (Strictly Controlled)
+##  AI Integration
 
 AI is intentionally **sandboxed**.
 
@@ -175,8 +158,6 @@ Hard constraints enforced via:
 * Explicit prompt contracts
 * Output termination tokens
 * Post-generation sanitization
-
-This is **AI as a renderer**, not a decision-maker.
 
 ---
 
@@ -198,8 +179,6 @@ If a book does not exist in the database, **it cannot appear in the response**.
 * Stateless API communication
 * Conversation context management on client side
 * Clean separation of concerns
-
-Frontend acts purely as a **presentation layer**.
 
 ---
 
@@ -243,21 +222,9 @@ Returns:
 
 ---
 
-##  Engineering Philosophy
-
-This project intentionally avoids:
-
-* End-to-end AI decision making
-* Black-box “LLM does everything” design
-* Hallucination-prone architectures
-
-Instead, it demonstrates:
-
-> **AI-assisted systems with deterministic control and auditability**
-
 ---
 
-##  Why Recruiters Care
+##  Summary
 
 This project demonstrates:
 
@@ -267,13 +234,12 @@ This project demonstrates:
 * Production-style guardrails
 * Clear separation of responsibilities
 
-It is not a demo chatbot — it is an **engineering system**.
 
 ---
 
 ##  Author
 
-** Biggestprocrastinator **
+**Biggestprocrastinator**
 Full-Stack Engineer | Backend & AI Systems
 Built to demonstrate **production-grade AI integration**, not hype.
 

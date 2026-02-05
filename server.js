@@ -789,7 +789,10 @@ app.post("/ask-ai", async (req, res) => {
     const copiesOfMatch = lowerQ.match(/\bhow\s+many\s+copies\s+(?:of|for)\s+(.+)/);
     if (copiesOfMatch && copiesOfMatch[1]) {
       let subject = copiesOfMatch[1].trim();
-      subject = subject.replace(/\b(do you have|available|in stock|right now)\b/gi, "").trim();
+      subject = subject
+        .replace(/\b(do you have|available|in stock|right now|are there)\b/gi, "")
+        .replace(/[?!.]+$/g, "")
+        .trim();
       const books = await searchBooks(subject);
       const totalCopies = books.reduce((sum, b) => {
         const c = Number.isFinite(b?.copies) ? b.copies : 0;

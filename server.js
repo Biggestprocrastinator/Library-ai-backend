@@ -791,7 +791,7 @@ app.post("/ask-ai", async (req, res) => {
       let subject = copiesOfMatch[1].trim();
       subject = subject
         .replace(/\b(do you have|available|in stock|right now|are there)\b/gi, "")
-        .replace(/[?!.]+$/g, "")
+        .replace(/[?!.]+/g, "")
         .trim();
       const books = await searchBooks(subject);
       const totalCopies = books.reduce((sum, b) => {

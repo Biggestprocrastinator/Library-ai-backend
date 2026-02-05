@@ -1,5 +1,8 @@
 
 #  Library AI Assistant
+![chatimage1](images/Front%201.png)
+![chatimage2](images/Front%202.png)
+
 
 **Hybrid Semantic Retrieval System with Deterministic AI-Controlled Response Generation**
 
